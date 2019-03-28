@@ -1,0 +1,104 @@
+import os
+import numpy as np
+import cv2 as cv
+from matplotlib import pyplot as plt
+%matplotlib inline
+from PIL import Image,ImageEnhance
+from scipy import optimize
+import math
+from numpy.linalg import inv
+
+image=Image.open('water.jpg')
+#增加對比
+image02=ImageEnhance.Contrast(image).enhance(15)
+image02.save('water.jpg')
+im=cv.imread('water.jpg')
+
+plt.imshow(im)
+plt.show()
+
+for i in range(im.shape[0]):
+    for j in range(im.shape[1]):
+        if im[i][j].mean()>100:
+            im[i][j]=[255,255,255]
+        else: 
+            im[i][j]=[0,0,0]
+plt.imshow(im)
+
+points=[]
+for i in range(im.shape[1]):
+    for j in range(im.shape[0]-1):
+        point=[]
+        if im[j+1][i][0]<im[j][i][0]:
+            point=[j,i]
+            points.append(point)
+            break
+points=np.array(points)
+Cpoints=points.reshape([-1,2])
+
+x=Cpoints[:,1]
+y=Cpoints[:,0]
+y=im.shape[0]-y
+def circle(x,y,xc,yc):
+    return np.sqrt((x-xc)**2+(y-yc)**2)
+def err(c,x,y):
+    Ri=circle(x,y,*c)
+    return Ri-Ri.mean()
+    
+def leastsq_circle(x,y):
+    # coordinates of the barycenter
+    x_m = np.mean(x).astype(int)
+    y_m = np.mean(y).astype(int)
+    center_estimate = x_m, y_m
+    center, ier = optimize.leastsq(err, center_estimate, args=(x,y))
+    xc, yc = center
+    Ri       = circle(x, y, *center)
+    R        = Ri.mean()
+    residu   = np.sum((Ri - R)**2)
+    return xc, yc, R, residu
+
+[xc, yc, R, residu]=leastsq_circle(x,y)
+perimeter=2*math.pi*R
+angle=360*len(x)/perimeter
+contact=90-((180-angle)/2)
+print(contact)
+###############################################################
+def ellipsefitting(x,y):
+    x=x.reshape([-1,1])
+    y=y.reshape([-1,1])
+    unit=np.ones_like(x)
+    C=np.hstack((x*x,y*y,x,y,unit))
+    CT=np.transpose(C)
+    S2=np.dot(inv(np.dot(CT,C)),CT)
+    a,b,c,d,e=np.dot(S2,y)
+    p=a,b,c,d,e
+    xc=-b/(2*a)
+    yc=-d/(2*c)
+    halflong=np.sqrt((-e+b*b/(4*a)+d*d/(4*c))/a)
+    halfshort=np.sqrt((-e+b*b/(4*a)+d*d/(4*c))/c)
+    return xc,yc,halflong,halfshort,p
+    
+ ellipsefitting(x,y)
+###############################################################
+def curve(p,x):
+    a,b,c=p
+    return a*x**2+b*x+c
+def err(p,x,y):
+    return np.square(y-curve(p,x))
+def leastsq_curve(x,y):
+    # coordinates of the barycenter
+    p0=[0,0,0]
+    para, ier = optimize.leastsq(err, p0 , args=(x,y))
+    m=2*para[0]*x[-1]+para[1]
+    contact=math.degrees(np.arctan(m))
+    return para,contact
+xdata=np.array(x[-5:-1])
+ydata=np.array(y[-5:-1])
+leastsq_curve(xdata,ydata)
+################################################################
+def theta(x,y):
+    r=(x[-1]-x[0])/2
+    h=np.max(y)-y[0]
+    contact=math.degrees(np.arctan(h/r))*2
+    return contact
+theta(x,y)
